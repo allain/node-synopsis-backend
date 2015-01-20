@@ -1,5 +1,6 @@
 var shoe = require('shoe');
 var mongojs = require('mongojs');
+var bootstrap = require('stream-bootstrap');
 
 var db = mongojs(process.env.MONGOLAB_URI || 'localhost/sync-test');
 
@@ -9,49 +10,31 @@ var debug = require('debug')('synopsis-store');
 var through2 = require('through2');
 
 var jiff = require('jiff');
-
-var MuxDemux = require('mux-demux');
-
-var streamRouter = require('stream-router')();
-streamRouter.addRoute(':name/:start', connectToSynopsis);
+var JSONStream = require('JSONStream');
 
 var targets = {};
 
 module.exports = function(server) {
   shoe(function (stream) {
-    var mdm = MuxDemux({
-      error: false
-    });
+		stream.on('error', function(err) {
+			debug('stream error', err);
+		});
 
-    mdm.on("connection", streamRouter);
+    stream.pipe(JSONStream.parse()).pipe(bootstrap(function(config, encoding, cb) {
+		  buildSynopsis(config.name, function(err, syn) {
+				if (err) {
+					debug('could not create synopsis', err);
+					stream.close();
+					return;
+				}
 
-    stream.pipe(mdm).pipe(stream);
+				//TODO: handle errors way way better than this
+				syn.createStream(config.start, function(err, synStream) {
+					cb(null, synStream);
+				});
+      });	
+		})).pipe(JSONStream.stringify(false)).pipe(stream);
   }).install(server, '/sync');
-}
-
-function connectToSynopsis(stream) {
-  var metaParts = stream.meta.split('/');
-
-  var targetName = metaParts[0];
-  var start = metaParts[1];
-
-  stream.error(function(err) {
-    debug('stream error', err);
-  });
-
-  buildSynopsis(targetName, function(err, syn) {
-    if (err) {
-      debug('could not create synopsis', err);
-      stream.close();
-      return;
-    }
-
-    //TODO: handle errors way way better than this
-    syn.createStream(parseInt(start, 10), function(err, synStream) {
-      stream.pipe(synStream).pipe(stream);
-    });
-      
-  });
 }
 
 function buildSynopsis(targetName, cb) {
