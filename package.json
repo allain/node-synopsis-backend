@@ -25,11 +25,12 @@
     "JSONStream": "^0.10.0",
     "debug": "^2.1.1",
     "jiff": "^0.7.0",
-    "js-beautify": "^1.5.4",
     "mongojs": "^0.18.1",
-    "shoe": "0.0.15",
     "stream-bootstrap": "^0.1.0",
     "synopsis": "^0.7.0",
     "through2": "^0.6.3"
+  },
+  "devDependencies": {
+    "js-beautify": "^1.5.4"
   }
 }
