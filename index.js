@@ -14,30 +14,73 @@ var JSONStream = require('JSONStream');
 
 var targets = {};
 
-module.exports = function(server) {
+module.exports = function(server, options) {
+  options = options || {};
+
   shoe(function (stream) {
 		stream.on('error', function(err) {
 			debug('stream error', err);
 		});
 
+		var consumerId;
+    var store;
+
     stream.pipe(JSONStream.parse()).pipe(bootstrap(function(config, encoding, cb) {
-		  buildSynopsis(config.name, function(err, syn) {
-				if (err) {
-					debug('could not create synopsis', err);
-					stream.close();
-					return;
+      consumerId = config.consumerId;
+      if (!consumerId) {
+				return cb(new Error('consumerId not found in first payload'));
+			}
+      debug('consumer connected ' + consumerId);
+
+		  store = buildMongoStore(config.name);
+
+			var auth = config.auth;;
+      
+			checkAuthentication(auth, wireUpSynopsysStream); 
+		  
+			function wireUpSynopsysStream(err) {
+        if (err) return cb(err);
+
+				buildSynopsis(config, store, function(err, syn) {
+					if (err) {
+						debug('could not create synopsis', err);
+						stream.close();
+						return;
+					}
+
+					//TODO: handle errors way way better than this
+					syn.createStream(config.start, function(err, synStream) {
+						cb(null, synStream);
+					});
+				});	
+			}
+
+			function checkAuthentication(auth, cb) {
+				if (config.authenticator) {
+					if (typeof(auth) !== 'function') {
+						throw new Error('invalid authenticator');
+					}
+
+					debug('calling out to authenticator with auth', auth);
+					return config.authenticator(auth, cb);
 				}
 
-				//TODO: handle errors way way better than this
-				syn.createStream(config.start, function(err, synStream) {
-					cb(null, synStream);
-				});
-      });	
+				//Placeholder for custom logic
+				return cb(null);
+			}
+		})).pipe(through2.obj(function(chunk, enc, cb) {
+			this.push(chunk);
+			debug('consumer ' + consumerId + ' = ' + chunk[1]);
+			store.set('c-' + consumerId, chunk[1]);
+      cb();
 		})).pipe(JSONStream.stringify(false)).pipe(stream);
   }).install(server, '/sync');
+
 }
 
-function buildSynopsis(targetName, cb) {
+
+function buildSynopsis(config, store, cb) {
+  var targetName = config.name;
   var target = targets[targetName];
   if (target) {
     debug('reusing model: ' + targetName);
@@ -55,7 +98,7 @@ function buildSynopsis(targetName, cb) {
           return obj.id || obj._id || obj.hash || JSON.stringify(obj);
         });
       },
-      store: buildMongoStore(targetName)
+      store: store
     });
 
     target.on('ready', function() {
@@ -68,6 +111,12 @@ function buildSynopsis(targetName, cb) {
 
 function buildMongoStore(name) {
   var collection = db.collection(name);
+	
+	function noopErr(err) {
+	  if (err) {
+			debug('error writing to db', err);
+		}
+	}
 
   return {
     get: function(key, cb) {
@@ -77,7 +126,8 @@ function buildMongoStore(name) {
       });
     },
     set: function(key, val, cb) {
-      collection.update({key: key}, {$set: {key: key, val: val}}, {upsert: true, multi: false}, cb);
+      collection.update({key: key}, {$set: {key: key, val: val}}, {upsert: true, multi: false}, cb || noopErr);
     }
   };
 }
+
