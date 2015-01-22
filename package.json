@@ -4,7 +4,7 @@
   "description": "A backend for a synopsis-client powered by a synopsis instance",
   "main": "index.js",
   "scripts": {
-    "format": "find . -name *.js -not -path './node_modules/*' | xargs node_modules/js-beautify/js/bin/js-beautify.js --replace"
+    "format": "find . -name '*.js' -not -path './node_modules/*' | xargs node_modules/js-beautify/js/bin/js-beautify.js --replace"
   },
   "repository": {
     "type": "git",
