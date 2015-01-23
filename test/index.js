@@ -158,7 +158,6 @@ describe('SynopsisBackend', function() {
 
     stream.on('data', function(data) {
       data = JSON.parse(data);
-      console.log(data);
       assert.equal(data.error, 'invalid auth');
       done();
     });
