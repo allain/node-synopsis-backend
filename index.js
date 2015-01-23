@@ -38,9 +38,15 @@ function SynopsisBackend(options) {
 
       checkAuthentication(config.auth, function(err) {
         if (err) {
-          //TODO:
-          debug('TODO', err);
-          //return cb();
+          var errorStream = new stream.Readable({
+            objectMode: true
+          });
+          errorStream._read = function() {};
+          errorStream.push({
+            error: 'invalid auth',
+            cause: err.toString()
+          });
+          return cb(null, errorStream);
         }
 
         if (config.auth) {
@@ -91,7 +97,7 @@ function SynopsisBackend(options) {
     })).pipe(JSONStream.stringify(false)).pipe(output);
 
     output.on('error', function(err) {
-      debug(err);
+      debug('ERROR CALLED', err);
     });
 
     return duplexify(input, output);

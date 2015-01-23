@@ -94,15 +94,18 @@ describe('SynopsisBackend', function() {
 
   it('emits error when patch could not be applied', function(done) {
     stream.on('error', done);
+
     jsonStream.write({
       name: 'unit-testing',
       consumerId: '1'
     });
+
     jsonStream.write([{
       op: 'add',
       path: '/a',
       value: 1
     }]);
+
     jsonStream.write([{
       op: 'test',
       path: '/a',
@@ -131,6 +134,33 @@ describe('SynopsisBackend', function() {
       } else {
         assert.deepEqual(data, expectedData.shift());
       }
+    });
+  });
+
+  it('should handle authenticator failures without taking down everything', function(done) {
+    backend = new SynopsisBackend({
+      authenticator: function(auth, cb) {
+        cb(new Error('NEVER!!!'));
+      }
+    });
+    stream = backend.createStream();
+    jsonStream = JSONStream.stringify(false);
+    jsonStream.pipe(stream);
+
+    jsonStream.write({
+      auth: {
+        network: 'google',
+        access_token: 'BAD'
+      },
+      consumerId: 1,
+      name: 'test'
+    });
+
+    stream.on('data', function(data) {
+      data = JSON.parse(data);
+      console.log(data);
+      assert.equal(data.error, 'invalid auth');
+      done();
     });
   });
 });
