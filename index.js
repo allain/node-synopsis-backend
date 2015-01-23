@@ -38,7 +38,9 @@ function SynopsisBackend(options) {
 
       checkAuthentication(config.auth, function(err) {
         if (err) {
-          return cb(err);
+          //TODO:
+          debug('TODO', err);
+          //return cb();
         }
 
         if (config.auth) {
