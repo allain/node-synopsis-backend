@@ -1,5 +1,6 @@
 var mongojs = require('mongojs');
 var bootstrap = require('stream-bootstrap');
+var stream = require('stream');
 
 var db = mongojs(process.env.MONGOLAB_URI || 'localhost/sync-test');
 
@@ -11,17 +12,27 @@ var through2 = require('through2');
 var jiff = require('jiff');
 var JSONStream = require('JSONStream');
 
-var targets = {};
+var duplexify = require('duplexify');
 
-module.exports = function(stream) {
-  stream.on('error', function(err) {
-    debug('stream error', err);
-  });
+module.exports = SynopsisBackend;
+
+function SynopsisBackend() {
+  this.targets = {};
+}
+
+SynopsisBackend.prototype = {
+  createStream: createStream
+};
+
+function createStream() {
+  var self = this;
+  var input = new stream.PassThrough();
+  var output = new stream.PassThrough();
 
   var consumerId;
   var store;
 
-  stream.pipe(JSONStream.parse()).pipe(bootstrap(function(config, encoding, cb) {
+  input.pipe(JSONStream.parse()).pipe(bootstrap(function(config, encoding, cb) {
     consumerId = config.consumerId;
     if (consumerId) {
       debug('consumer connected ' + consumerId);
@@ -31,26 +42,11 @@ module.exports = function(stream) {
 
     store = buildMongoStore(config.name);
 
-    var auth = config.auth;;
-
-    checkAuthentication(auth, wireUpSynopsysStream);
-
-    function wireUpSynopsysStream(err) {
+    checkAuthentication(config.auth, function(err) {
       if (err) return cb(err);
 
-      buildSynopsis(config, store, function(err, syn) {
-        if (err) {
-          debug('could not create synopsis', err);
-          stream.close();
-          return;
-        }
-
-        //TODO: handle errors way way better than this
-        syn.createStream(config.start, function(err, synStream) {
-          cb(null, synStream);
-        });
-      });
-    }
+      wireUpSynopsysStream(cb);
+    });
 
     function checkAuthentication(auth, cb) {
       if (config.authenticator) {
@@ -65,19 +61,37 @@ module.exports = function(stream) {
       //Placeholder for custom logic
       return cb(null);
     }
+
+    function wireUpSynopsysStream(cb) {
+      buildSynopsis(config, store, self.targets, function(err, syn) {
+        if (err) {
+          debug('could not create synopsis instance', err);
+          return;
+        }
+
+        //TODO: handle errors way way better than this
+        syn.createStream(config.start, function(err, synStream) {
+          cb(null, synStream);
+        });
+      });
+    }
+
   })).pipe(through2.obj(function(chunk, enc, cb) {
     this.push(chunk);
     if (consumerId) {
       debug('consumer ' + consumerId + ' = ' + chunk[1]);
       store.set('c-' + consumerId, chunk[1]);
     }
-    cb();
-  })).pipe(JSONStream.stringify(false)).pipe(stream);
-}
 
-function buildSynopsis(config, store, cb) {
+    cb();
+  })).pipe(JSONStream.stringify(false)).pipe(output);
+
+  return duplexify(input, output);
+};
+
+function buildSynopsis(config, store, synopsisCache, cb) {
   var targetName = config.name;
-  var target = targets[targetName];
+  var target = synopsisCache[targetName];
   if (target) {
     debug('reusing model: ' + targetName);
     cb(null, target);
@@ -99,7 +113,7 @@ function buildSynopsis(config, store, cb) {
 
     target.on('ready', function() {
       debug('target ready', targetName);
-      targets[targetName] = target;
+      synopsisCache[targetName] = target;
       cb(null, target);
     });
   }

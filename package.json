@@ -4,7 +4,8 @@
   "description": "A backend for a synopsis-client powered by a synopsis instance",
   "main": "index.js",
   "scripts": {
-    "format": "find . -name '*.js' -not -path './node_modules/*' | xargs node_modules/js-beautify/js/bin/js-beautify.js --replace"
+    "format": "find . -name '*.js' -not -path './node_modules/*' | xargs node_modules/js-beautify/js/bin/js-beautify.js --replace",
+    "test": "node_modules/mocha/bin/mocha test"
   },
   "repository": {
     "type": "git",
@@ -24,6 +25,7 @@
   "dependencies": {
     "JSONStream": "^0.10.0",
     "debug": "^2.1.1",
+    "duplexify": "^3.2.0",
     "jiff": "^0.7.0",
     "mongojs": "^0.18.1",
     "stream-bootstrap": "^0.1.0",
@@ -31,6 +33,7 @@
     "through2": "^0.6.3"
   },
   "devDependencies": {
-    "js-beautify": "^1.5.4"
+    "js-beautify": "^1.5.4",
+    "mocha": "^2.1.0"
   }
 }
