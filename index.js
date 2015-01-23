@@ -16,78 +16,85 @@ var duplexify = require('duplexify');
 
 module.exports = SynopsisBackend;
 
-function SynopsisBackend() {
+function SynopsisBackend(options) {
+  options = options || {};
   this.targets = {};
-}
+  this.createStream = function() {
+    var self = this;
+    var input = new stream.PassThrough();
+    var output = new stream.PassThrough();
+    var consumerId;
+    var store;
 
-SynopsisBackend.prototype = {
-  createStream: createStream
-};
-
-function createStream() {
-  var self = this;
-  var input = new stream.PassThrough();
-  var output = new stream.PassThrough();
-
-  var consumerId;
-  var store;
-
-  input.pipe(JSONStream.parse()).pipe(bootstrap(function(config, encoding, cb) {
-    consumerId = config.consumerId;
-    if (consumerId) {
-      debug('consumer connected ' + consumerId);
-    } else {
-      debug('ERROR: consumerId not found in first payload');
-    }
-
-    store = buildMongoStore(config.name);
-
-    checkAuthentication(config.auth, function(err) {
-      if (err) return cb(err);
-
-      wireUpSynopsysStream(cb);
-    });
-
-    function checkAuthentication(auth, cb) {
-      if (config.authenticator) {
-        if (typeof(auth) !== 'function') {
-          throw new Error('invalid authenticator');
-        }
-
-        debug('calling out to authenticator with auth', auth);
-        return config.authenticator(auth, cb);
+    input.pipe(JSONStream.parse()).pipe(bootstrap(function(config, encoding, cb) {
+      consumerId = config.consumerId;
+      if (consumerId) {
+        debug('consumer connected ' + consumerId);
+      } else {
+        debug('ERROR: consumerId not found in first payload');
       }
 
-      //Placeholder for custom logic
-      return cb(null);
-    }
+      store = buildMongoStore(config.name);
 
-    function wireUpSynopsysStream(cb) {
-      buildSynopsis(config, store, self.targets, function(err, syn) {
+      checkAuthentication(config.auth, function(err) {
         if (err) {
-          debug('could not create synopsis instance', err);
-          return;
+          return cb(err);
         }
 
-        //TODO: handle errors way way better than this
-        syn.createStream(config.start, function(err, synStream) {
-          cb(null, synStream);
-        });
+        if (config.auth) {
+          debug('Authed ' + config.auth.network + '-' + config.auth.profile);
+        }
+
+        wireUpSynopsysStream(cb);
       });
-    }
 
-  })).pipe(through2.obj(function(chunk, enc, cb) {
-    this.push(chunk);
-    if (consumerId) {
-      debug('consumer ' + consumerId + ' = ' + chunk[1]);
-      store.set('c-' + consumerId, chunk[1]);
-    }
+      function checkAuthentication(auth, cb) {
+        if (config.name.match(/^p-/) && !auth) return cb(new Error('Auth not given for personal store'));
 
-    cb();
-  })).pipe(JSONStream.stringify(false)).pipe(output);
+        if (auth && options.authenticator) {
+          if (typeof(options.authenticator) !== 'function') {
+            throw new Error('invalid authenticator');
+          }
 
-  return duplexify(input, output);
-};
+          debug('calling out to authenticator with auth', auth);
+
+          return options.authenticator(auth, cb);
+        }
+
+        return cb(null);
+      }
+
+      function wireUpSynopsysStream(cb) {
+        buildSynopsis(config, store, self.targets, function(err, syn) {
+          if (err) {
+            debug('could not create synopsis instance', err);
+            return;
+          }
+
+          //TODO: handle errors way way better than this
+          syn.createStream(config.start, function(err, synStream) {
+            cb(null, synStream);
+          });
+        });
+      }
+
+    })).pipe(through2.obj(function(chunk, enc, cb) {
+      this.push(chunk);
+      if (consumerId) {
+        debug('consumer ' + consumerId + ' = ' + chunk[1]);
+        store.set('c-' + consumerId, chunk[1]);
+      }
+
+      cb();
+    })).pipe(JSONStream.stringify(false)).pipe(output);
+
+    output.on('error', function(err) {
+      debug(err);
+    });
+
+    return duplexify(input, output);
+  };
+}
 
 function buildSynopsis(config, store, synopsisCache, cb) {
   var targetName = config.name;
