@@ -194,7 +194,7 @@ function buildSynopsis(config, store, synopsisCache, cb) {
       patcher: function(doc, patch, cb) {
         try {
           cb(null, jiff.patch(patch, doc));
-        } catch(e) {
+        } catch (e) {
           cb(e);
         }
       },
