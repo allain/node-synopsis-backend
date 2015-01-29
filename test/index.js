@@ -58,11 +58,13 @@ describe('SynopsisBackend', function() {
       name: 'unit-testing',
       consumerId: '1'
     });
+
     jsonStream.write([{
       op: 'add',
       path: '/a',
       value: 1
     }]);
+
     jsonStream.write([{
       op: 'add',
       path: '/b',
@@ -70,7 +72,7 @@ describe('SynopsisBackend', function() {
     }]);
 
     var expectedData = [
-   [[], 0], // When connecting, you always get an update packet
+     [[], 0], // When connecting, you always get an update packet
    [[{
         op: 'add',
         path: '/a',
@@ -113,13 +115,13 @@ describe('SynopsisBackend', function() {
     }]);
 
     var expectedData = [
-   [[], 0], // When connecting, you always get an update packet
-   [[{
+     [[], 0], // When connecting, you always get an update packet
+     [[{
         op: 'add',
         path: '/a',
         value: 1
       }], 1]
-  ];
+    ];
 
     stream.pipe(JSONStream.parse()).on('data', function(data) {
       if (expectedData.length === 0) {

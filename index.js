@@ -191,13 +191,19 @@ function buildSynopsis(config, store, synopsisCache, cb) {
 
     target = new Synopsis({
       start: {},
-      patcher: function(doc, patch) {
-        return jiff.patch(patch, doc);
+      patcher: function(doc, patch, cb) {
+        try {
+          cb(null, jiff.patch(patch, doc));
+        } catch(e) {
+          cb(e);
+        }
       },
-      differ: function(before, after) {
-        return jiff.diff(before, after, function(obj) {
+      differ: function(before, after, cb) {
+        var diff = jiff.diff(before, after, function(obj) {
           return obj.id || obj._id || obj.hash || JSON.stringify(obj);
         });
+
+        cb(null, diff);
       },
       store: store
     });

@@ -29,7 +29,7 @@
     "jiff": "^0.7.0",
     "mongojs": "^0.18.1",
     "stream-bootstrap": "^0.1.0",
-    "synopsis": "^0.7.0",
+    "synopsis": "^0.8.1",
     "through2": "^0.6.3",
     "uuid": "^2.0.1"
   },
