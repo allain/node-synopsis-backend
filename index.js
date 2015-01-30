@@ -1,3 +1,5 @@
+"use strict"
+
 var mongojs = require('mongojs');
 
 var bootstrap = require('stream-bootstrap');
@@ -55,18 +57,18 @@ function SynopsisBackend(options) {
     var consumerId;
     var store;
 
-    input.pipe(JSONStream.parse()).pipe(bootstrap(function(config, encoding, cb) {
-      consumerId = config.consumerId;
+    input.pipe(JSONStream.parse()).pipe(bootstrap(function(handshake, encoding, cb) {
+      consumerId = handshake.consumerId;
       if (consumerId) {
-        debug('consumer connected ' + consumerId + ' to ' + config.name);
+        debug('consumer connected ' + consumerId + ' to ' + handshake.name);
       } else {
         debug('ERROR: consumerId not found in first payload');
       }
 
-      store = buildMongoStore(config.name);
+      store = buildMongoStore(handshake.name);
 
-      if (config.sid) {
-        return getSession(config.sid, function(err, session) {
+      if (handshake.sid) {
+        return getSession(handshake.sid, function(err, session) {
           if (err) {
             return failBootstrap({
               error: 'unable to fetch session',
@@ -79,13 +81,13 @@ function SynopsisBackend(options) {
             }, cb);
           }
 
-          debug('session ' + config.sid + ' => ' + JSON.stringify(session));
+          debug('session ' + handshake.sid + ' => ' + JSON.stringify(session));
 
           wireUpSynopsysStream(undefined, cb);
         });
       }
 
-      checkAuthentication(config.auth, function(err) {
+      checkAuthentication(handshake.auth, function(err) {
         if (err) {
           return failBootstrap({
             error: 'invalid auth',
@@ -94,17 +96,17 @@ function SynopsisBackend(options) {
         }
 
         var sessionId;
-        if (config.auth && typeof config.auth !== 'string') {
+        if (handshake.auth && typeof handshake.auth !== 'string') {
           sessionId = uuid.v4();
-          setSession(sessionId, config.auth, function(err) {
+          setSession(sessionId, handshake.auth, function(err) {
             if (err) {
               debug('unable to store session', err);
             }
           });
         }
 
-        if (config.auth) {
-          debug('Authed ' + config.auth.network + '-' + config.auth.profile);
+        if (handshake.auth) {
+          debug('Authed ' + handshake.auth.network + '-' + handshake.auth.profile);
         }
 
         wireUpSynopsysStream(sessionId, cb);
@@ -120,7 +122,7 @@ function SynopsisBackend(options) {
       }
 
       function checkAuthentication(auth, cb) {
-        if (config.name.match(/^p-/) && !auth) return cb(new Error('Auth not given for personal store'));
+        if (handshake.name.match(/^p-/) && !auth) return cb(new Error('Auth not given for personal store'));
 
         if (auth && options.authenticator) {
           if (typeof(options.authenticator) !== 'function') {
@@ -136,14 +138,14 @@ function SynopsisBackend(options) {
       }
 
       function wireUpSynopsysStream(sessionId, cb) {
-        buildSynopsis(config, store, self.targets, function(err, syn) {
+        buildSynopsis(handshake, store, self.targets, function(err, syn) {
           if (err) {
             debug('could not create synopsis instance', err);
             return;
           }
 
           //TODO: handle errors way way better than this
-          syn.createStream(config.start, function(err, synStream) {
+          syn.createStream(handshake.start, function(err, synStream) {
             if (err) {
               return failBootstrap({
                 error: 'error creating synopsis stream',
@@ -180,8 +182,8 @@ function SynopsisBackend(options) {
   };
 }
 
-function buildSynopsis(config, store, synopsisCache, cb) {
-  var targetName = config.name;
+function buildSynopsis(handshake, store, synopsisCache, cb) {
+  var targetName = handshake.name;
   var target = synopsisCache[targetName];
   if (target) {
     debug('reusing model: ' + targetName);
