@@ -26,29 +26,7 @@ function SynopsisBackend(options) {
   options = options || {};
   this.targets = {};
 
-  function getSession(sid, cb) {
-    sessions.findOne({
-      sid: sid
-    }, function(err, doc) {
-      if (err) return cb(err);
-
-      cb(null, doc.content);
-    });
-  }
-
-  function setSession(sid, content, cb) {
-    sessions.update({
-      sid: sid
-    }, {
-      $set: {
-        sid: sid,
-        content: content
-      }
-    }, {
-      upsert: true,
-      multi: false
-    }, cb);
-  }
+  var sessionStore = options || require('synopsis/stores/memory'); 
 
   this.createStream = function() {
     var self = this;
@@ -68,7 +46,7 @@ function SynopsisBackend(options) {
       store = buildMongoStore(handshake.name);
 
       if (handshake.sid) {
-        return getSession(handshake.sid, function(err, session) {
+        return sessionStore.get(handshake.sid, function(err, session) {
           if (err) {
             return failBootstrap({
               error: 'unable to fetch session',
@@ -98,7 +76,7 @@ function SynopsisBackend(options) {
         var sessionId;
         if (handshake.auth && typeof handshake.auth !== 'string') {
           sessionId = uuid.v4();
-          setSession(sessionId, handshake.auth, function(err) {
+          sessionStore.set(sessionId, handshake.auth, function(err) {
             if (err) {
               debug('unable to store session', err);
             }
