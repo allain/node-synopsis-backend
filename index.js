@@ -4,8 +4,7 @@ var mongojs = require('mongojs');
 
 var bootstrap = require('stream-bootstrap');
 var stream = require('stream');
-
-var db = mongojs(process.env.MONGOLAB_URI || 'localhost/sync-test');
+var async = require('async');
 
 var Synopsis = require('synopsis');
 var debug = require('debug')('synopsis-store');
@@ -20,15 +19,39 @@ var duplexify = require('duplexify');
 
 module.exports = SynopsisBackend;
 
-var sessions = db.collection('sessions');
+function waterfall(obj, cb) {
+  
+}
 
 function SynopsisBackend(options) {
-  options = options || {};
   this.targets = {};
+  this.options = defaults(options, {
+    storeMaker: function(name, cb) {
+      var values = {};
 
-  var sessionStore = options || require('synopsis/stores/memory'); 
+      cb(null, {
+        get: function(key, cb) {
+          cb(null, values[key]);
+        },
+        set: function(key, value, cb) {
+          values[key] = value;
+          cb();
+        } 
+      });
+    }
+  });
 
-  this.createStream = function() {
+  var sessionStore = options.sessionStore;
+  if (!sessionStore) {
+    makeStore('-sessions', function(err, store) {
+      debug('build session store');
+      sessionStore = store;
+    });
+  }
+}
+
+SynopsisBackend.prototype = {
+  createstream: function() {
     var self = this;
     var input = new stream.PassThrough();
     var output = new stream.PassThrough();
@@ -42,24 +65,30 @@ function SynopsisBackend(options) {
       } else {
         debug('ERROR: consumerId not found in first payload');
       }
+      
+      async.waterfall([
+       fetchSession 
+        function(session, cb) {
+          makeStoreForHandhake
+        }
+      ], function(err) {
 
-      store = buildMongoStore(handshake.name);
+      });
+      store = makeStore(handshake.name);
 
-      if (handshake.sid) {
-        return sessionStore.get(handshake.sid, function(err, session) {
-          if (err) {
-            return failBootstrap({
-              error: 'unable to fetch session',
-              cause: err.toString()
-            }, cb);
-          } else if (!session) {
-            return failBootstrap({
-              error: 'unable to find session',
-              cause: err.toString()
-            }, cb);
-          }
+      function fetchSession(cb) {
+        if (!handshake.sid) return cb();
 
-          debug('session ' + handshake.sid + ' => ' + JSON.stringify(session));
+        sessionStore.get(handshake.sid, function(err, session) {
+          if (err) return cb(new Error('unable to fetch session from store'));
+          if (!session) return cb(new Error('unable to find session'));
+
+          cb(null, session);
+        });
+      }
+          
+            
+            debug('session ' + handshake.sid + ' => ' + JSON.stringify(session));
 
           wireUpSynopsysStream(undefined, cb);
         });
@@ -194,38 +223,4 @@ function buildSynopsis(handshake, store, synopsisCache, cb) {
       cb(null, target);
     });
   }
-}
-
-function buildMongoStore(name) {
-  var collection = db.collection(name);
-
-  function noopErr(err) {
-    if (err) {
-      debug('error writing to db', err);
-    }
-  }
-
-  return {
-    get: function(key, cb) {
-      collection.findOne({
-        key: key
-      }, function(err, doc) {
-        if (err) return cb(err);
-        cb(null, doc ? doc.val : null);
-      });
-    },
-    set: function(key, val, cb) {
-      collection.update({
-        key: key
-      }, {
-        $set: {
-          key: key,
-          val: val
-        }
-      }, {
-        upsert: true,
-        multi: false
-      }, cb || noopErr);
-    }
-  };
 }
