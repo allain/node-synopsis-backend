@@ -55,7 +55,6 @@ function SynopsisBackend(options) {
 			});
 		});
 	} 
-
 }
 
 SynopsisBackend.prototype = new Emitter();
@@ -71,7 +70,6 @@ SynopsisBackend.prototype.createStream = function() {
 	input.pipe(JSONStream.parse()).pipe(bootstrap(function(handshake, encoding, cb) {
     var store; 
     var sessionId;
-		var session;
     var synopsis;
  
     async.series([
@@ -101,12 +99,13 @@ SynopsisBackend.prototype.createStream = function() {
     function validateSession(cb) {
 			if (!handshake.sid) return cb(); // no need to validate, you don't have one
 
-			return sessionStore.get(handshake.sid, function(err, s) {
-				if (err) return failBootstrap('unable to create synopsis stream', err, cb);
+			return sessionStore.get(handshake.sid, function(err, session) {
+				if (err) return failBootstrap('unable to fetch session', err, cb);
+				if (!session) return failBootstrap('session not found', cb);
 
 				debug('session ' + handshake.sid + ' => ' + JSON.stringify(session));
 
-				session = s;
+        handshake.auth = session;
 				cb();
 			});
 		}
