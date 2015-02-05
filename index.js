@@ -63,6 +63,7 @@ SynopsisBackend.prototype = new Emitter();
 SynopsisBackend.prototype.createStream = function() {
 	var self = this;
 	var options = this.options;
+  var sessionStore = options.sessionStore;
 	
 	var input = new stream.PassThrough();
 	var output = new stream.PassThrough();
