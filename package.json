@@ -1,6 +1,6 @@
 {
   "name": "synopsis-backend",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "A backend for a synopsis-client powered by a synopsis instance",
   "main": "index.js",
   "scripts": {
