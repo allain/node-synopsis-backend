@@ -152,7 +152,6 @@ describe('SynopsisBackend', function() {
 					network: 'google',
 					access_token: 'BAD'
 				},
-				consumerId: 1,
 				name: 'test'
 			});
 

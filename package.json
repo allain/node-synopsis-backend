@@ -24,6 +24,7 @@
   "homepage": "https://github.com/allain/node-synopsys-backend",
   "dependencies": {
     "JSONStream": "^0.10.0",
+    "async": "^0.9.0",
     "debug": "^2.1.1",
     "defaults": "^1.0.0",
     "duplexify": "^3.2.0",
