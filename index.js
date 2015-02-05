@@ -4,7 +4,8 @@ var mongojs = require('mongojs');
 
 var bootstrap = require('stream-bootstrap');
 var stream = require('stream');
-var async = require('async');
+
+var db = mongojs(process.env.MONGOLAB_URI || 'localhost/sync-test');
 
 var Synopsis = require('synopsis');
 var debug = require('debug')('synopsis-store');
@@ -19,39 +20,37 @@ var duplexify = require('duplexify');
 
 module.exports = SynopsisBackend;
 
-function waterfall(obj, cb) {
-  
-}
+var sessions = db.collection('sessions');
 
 function SynopsisBackend(options) {
+  options = options || {};
   this.targets = {};
-  this.options = defaults(options, {
-    storeMaker: function(name, cb) {
-      var values = {};
 
-      cb(null, {
-        get: function(key, cb) {
-          cb(null, values[key]);
-        },
-        set: function(key, value, cb) {
-          values[key] = value;
-          cb();
-        } 
-      });
-    }
-  });
+  function getSession(sid, cb) {
+    sessions.findOne({
+      sid: sid
+    }, function(err, doc) {
+      if (err) return cb(err);
 
-  var sessionStore = options.sessionStore;
-  if (!sessionStore) {
-    makeStore('-sessions', function(err, store) {
-      debug('build session store');
-      sessionStore = store;
+      cb(null, doc.content);
     });
   }
-}
 
-SynopsisBackend.prototype = {
-  createstream: function() {
+  function setSession(sid, content, cb) {
+    sessions.update({
+      sid: sid
+    }, {
+      $set: {
+        sid: sid,
+        content: content
+      }
+    }, {
+      upsert: true,
+      multi: false
+    }, cb);
+  }
+
+  this.createStream = function() {
     var self = this;
     var input = new stream.PassThrough();
     var output = new stream.PassThrough();
@@ -65,30 +64,24 @@ SynopsisBackend.prototype = {
       } else {
         debug('ERROR: consumerId not found in first payload');
       }
-      
-      async.waterfall([
-       fetchSession 
-        function(session, cb) {
-          makeStoreForHandhake
-        }
-      ], function(err) {
 
-      });
-      store = makeStore(handshake.name);
+      store = buildMongoStore(handshake.name);
 
-      function fetchSession(cb) {
-        if (!handshake.sid) return cb();
+      if (handshake.sid) {
+        return getSession(handshake.sid, function(err, session) {
+          if (err) {
+            return failBootstrap({
+              error: 'unable to fetch session',
+              cause: err.toString()
+            }, cb);
+          } else if (!session) {
+            return failBootstrap({
+              error: 'unable to find session',
+              cause: err.toString()
+            }, cb);
+          }
 
-        sessionStore.get(handshake.sid, function(err, session) {
-          if (err) return cb(new Error('unable to fetch session from store'));
-          if (!session) return cb(new Error('unable to find session'));
-
-          cb(null, session);
-        });
-      }
-          
-            
-            debug('session ' + handshake.sid + ' => ' + JSON.stringify(session));
+          debug('session ' + handshake.sid + ' => ' + JSON.stringify(session));
 
           wireUpSynopsysStream(undefined, cb);
         });
@@ -105,7 +98,7 @@ SynopsisBackend.prototype = {
         var sessionId;
         if (handshake.auth && typeof handshake.auth !== 'string') {
           sessionId = uuid.v4();
-          sessionStore.set(sessionId, handshake.auth, function(err) {
+          setSession(sessionId, handshake.auth, function(err) {
             if (err) {
               debug('unable to store session', err);
             }
@@ -223,4 +216,38 @@ function buildSynopsis(handshake, store, synopsisCache, cb) {
       cb(null, target);
     });
   }
+}
+
+function buildMongoStore(name) {
+  var collection = db.collection(name);
+
+  function noopErr(err) {
+    if (err) {
+      debug('error writing to db', err);
+    }
+  }
+
+  return {
+    get: function(key, cb) {
+      collection.findOne({
+        key: key
+      }, function(err, doc) {
+        if (err) return cb(err);
+        cb(null, doc ? doc.val : null);
+      });
+    },
+    set: function(key, val, cb) {
+      collection.update({
+        key: key
+      }, {
+        $set: {
+          key: key,
+          val: val
+        }
+      }, {
+        upsert: true,
+        multi: false
+      }, cb || noopErr);
+    }
+  };
 }
