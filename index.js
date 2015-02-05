@@ -86,7 +86,7 @@ SynopsisBackend.prototype.createStream = function() {
 			
 			synopsis.createStream(handshake.start, function(err, synopsisStream) {
 				if (err) 
-					return failBootstreap('unable to create synopsis stream', err, cb);
+					return failBootstrep('unable to create synopsis stream', err, cb);
 		
     		if (sessionId) {
 					synopsisStream.push({
@@ -102,7 +102,7 @@ SynopsisBackend.prototype.createStream = function() {
 			if (!handshake.sid) return cb(); // no need to validate, you don't have one
 
 			return sessionStore.get(handshake.sid, function(err, s) {
-				if (err) return failBootstreap('unable to create synopsis stream', err, cb);
+				if (err) return failBootstrap('unable to create synopsis stream', err, cb);
 
 				debug('session ' + handshake.sid + ' => ' + JSON.stringify(session));
 
@@ -113,7 +113,7 @@ SynopsisBackend.prototype.createStream = function() {
 		
     function checkAuthentication(cb) {
 			if (handshake.name.match(/^p-/) && !handshake.auth)
-				return failBootstreap('auth not given for personal store', cb);
+				return failBootstrap('auth not given for personal store', cb);
 
 			if (!handshake.auth || !options.authenticator) 
 				return cb(); // no need to check auth
