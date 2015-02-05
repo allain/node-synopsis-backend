@@ -1,186 +1,172 @@
 "use strict"
 
-var mongojs = require('mongojs');
+var defaults = require('defaults');
 
 var bootstrap = require('stream-bootstrap');
 var stream = require('stream');
 
-var db = mongojs(process.env.MONGOLAB_URI || 'localhost/sync-test');
-
 var Synopsis = require('synopsis');
 var debug = require('debug')('synopsis-store');
-
-var through2 = require('through2');
 
 var jiff = require('jiff');
 var uuid = require('uuid');
 var JSONStream = require('JSONStream');
 
 var duplexify = require('duplexify');
+var Emitter = require('wildemitter');
 
 module.exports = SynopsisBackend;
 
-var sessions = db.collection('sessions');
-
 function SynopsisBackend(options) {
-  options = options || {};
+  Emitter.call(this);
+  var self = this;
+
   this.targets = {};
+  this.options = options = defaults(options, {
+		makeStore: function(name) {
+			// Memory Store Maker
+			var values = {};
 
-  function getSession(sid, cb) {
-    sessions.findOne({
-      sid: sid
-    }, function(err, doc) {
-      if (err) return cb(err);
+			return {
+				get: function(key, cb) {
+					return cb(null, values[key]);
+				},
+				set: function(key, val, cb) {
+					values[key] = val;
+          cb();
+				}
+			};
+		}
+	});
 
-      cb(null, doc.content);
-    });
-  }
+	var sessionStore = options.sessionStore;
 
-  function setSession(sid, content, cb) {
-    sessions.update({
-      sid: sid
-    }, {
-      $set: {
-        sid: sid,
-        content: content
-      }
-    }, {
-      upsert: true,
-      multi: false
-    }, cb);
-  }
+  if (!sessionStore) {
+		sessionStore = options.makeStore('-session');
+	} 
 
-  this.createStream = function() {
-    var self = this;
-    var input = new stream.PassThrough();
-    var output = new stream.PassThrough();
-    var consumerId;
-    var store;
-
-    input.pipe(JSONStream.parse()).pipe(bootstrap(function(handshake, encoding, cb) {
-      consumerId = handshake.consumerId;
-      if (consumerId) {
-        debug('consumer connected ' + consumerId + ' to ' + handshake.name);
-      } else {
-        debug('ERROR: consumerId not found in first payload');
-      }
-
-      store = buildMongoStore(handshake.name);
-
-      if (handshake.sid) {
-        return getSession(handshake.sid, function(err, session) {
-          if (err) {
-            return failBootstrap({
-              error: 'unable to fetch session',
-              cause: err.toString()
-            }, cb);
-          } else if (!session) {
-            return failBootstrap({
-              error: 'unable to find session',
-              cause: err.toString()
-            }, cb);
-          }
-
-          debug('session ' + handshake.sid + ' => ' + JSON.stringify(session));
-
-          wireUpSynopsysStream(undefined, cb);
-        });
-      }
-
-      checkAuthentication(handshake.auth, function(err) {
-        if (err) {
-          return failBootstrap({
-            error: 'invalid auth',
-            cause: err.toString()
-          }, cb);
-        }
-
-        var sessionId;
-        if (handshake.auth && typeof handshake.auth !== 'string') {
-          sessionId = uuid.v4();
-          setSession(sessionId, handshake.auth, function(err) {
-            if (err) {
-              debug('unable to store session', err);
-            }
-          });
-        }
-
-        if (handshake.auth) {
-          debug('Authed ' + handshake.auth.network + '-' + handshake.auth.profile);
-        }
-
-        wireUpSynopsysStream(sessionId, cb);
-      });
-
-      function failBootstrap(explanation, cb) {
-        var errorStream = new stream.Readable({
-          objectMode: true
-        });
-        errorStream._read = function() {};
-        errorStream.push(explanation);
-        return cb(null, errorStream);
-      }
-
-      function checkAuthentication(auth, cb) {
-        if (handshake.name.match(/^p-/) && !auth) return cb(new Error('Auth not given for personal store'));
-
-        if (auth && options.authenticator) {
-          if (typeof(options.authenticator) !== 'function') {
-            throw new Error('invalid authenticator');
-          }
-
-          debug('calling out to authenticator with auth', auth);
-
-          return options.authenticator(auth, cb);
-        }
-
-        return cb(null);
-      }
-
-      function wireUpSynopsysStream(sessionId, cb) {
-        buildSynopsis(handshake, store, self.targets, function(err, syn) {
-          if (err) {
-            debug('could not create synopsis instance', err);
-            return;
-          }
-
-          //TODO: handle errors way way better than this
-          syn.createStream(handshake.start, function(err, synStream) {
-            if (err) {
-              return failBootstrap({
-                error: 'error creating synopsis stream',
-                cause: err.toString()
-              }, cb);
-            }
-
-            if (sessionId) {
-              synStream.push({
-                sid: sessionId
-              });
-            }
-
-            cb(null, synStream);
-          });
-        });
-      }
-
-    })).pipe(through2.obj(function(chunk, enc, cb) {
-      this.push(chunk);
-      if (consumerId && chunk[1] !== void 0) {
-        debug('consumer ' + consumerId + ' = ' + chunk[1]);
-        store.set('c-' + consumerId, chunk[1]);
-      }
-
-      cb();
-    })).pipe(JSONStream.stringify(false)).pipe(output);
-
-    output.on('error', function(err) {
-      debug('ERROR CALLED', err);
-    });
-
-    return duplexify(input, output);
-  };
+  process.nextTick(function() {
+		self.emit('ready');
+	});
 }
+
+SynopsisBackend.prototype = new Emitter();
+
+SynopsisBackend.prototype.createStream = function() {
+	var self = this;
+	var options = this.options;
+	
+	var input = new stream.PassThrough();
+	var output = new stream.PassThrough();
+	var store;
+
+	input.pipe(JSONStream.parse()).pipe(bootstrap(function(handshake, encoding, cb) {
+		store = options.makeStore(handshake.name);
+
+		if (handshake.sid) {
+			return sessionStore.get(handshake.sid, function(err, session) {
+				if (err) {
+					return failBootstrap({
+						error: 'unable to fetch session',
+						cause: err.toString()
+					}, cb);
+				} else if (!session) {
+					return failBootstrap({
+						error: 'unable to find session',
+						cause: err.toString()
+					}, cb);
+				}
+
+				debug('session ' + handshake.sid + ' => ' + JSON.stringify(session));
+
+				wireUpSynopsysStream(undefined, cb);
+			});
+		}
+
+		checkAuthentication(handshake.auth, function(err) {
+			if (err) {
+				return failBootstrap({
+					error: 'invalid auth',
+					cause: err.toString()
+				}, cb);
+			}
+
+			var sessionId;
+			if (handshake.auth && typeof handshake.auth !== 'string') {
+				sessionId = uuid.v4();
+				sessionStore.set(sessionId, handshake.auth, function(err) {
+					if (err) {
+						debug('unable to store session', err);
+					}
+				});
+			}
+
+			if (handshake.auth) {
+				debug('Authed ' + handshake.auth.network + '-' + handshake.auth.profile);
+			}
+
+			wireUpSynopsysStream(sessionId, cb);
+		});
+
+		function failBootstrap(explanation, cb) {
+			var errorStream = new stream.Readable({
+				objectMode: true
+			});
+			errorStream._read = function() {};
+			errorStream.push(explanation);
+			return cb(null, errorStream);
+		}
+
+		function checkAuthentication(auth, cb) {
+			if (handshake.name.match(/^p-/) && !auth) return cb(new Error('Auth not given for personal store'));
+
+			if (auth && options.authenticator) {
+				if (typeof(options.authenticator) !== 'function') {
+					throw new Error('invalid authenticator');
+				}
+
+				debug('calling out to authenticator with auth', auth);
+
+				return options.authenticator(auth, cb);
+			}
+
+			return cb(null);
+		}
+
+		function wireUpSynopsysStream(sessionId, cb) {
+			buildSynopsis(handshake, store, self.targets, function(err, syn) {
+				if (err) {
+					debug('could not create synopsis instance', err);
+					return;
+				}
+
+				syn.createStream(handshake.start, function(err, synStream) {
+					if (err) {
+						return failBootstrap({
+							error: 'error creating synopsis stream',
+							cause: err.toString()
+						}, cb);
+					}
+
+					if (sessionId) {
+						synStream.push({
+							sid: sessionId
+						});
+					}
+
+					cb(null, synStream);
+				});
+			});
+		}
+
+	})).pipe(JSONStream.stringify(false)).pipe(output);
+
+	output.on('error', function(err) {
+		debug('ERROR CALLED', err);
+	});
+
+	return duplexify(input, output);
+};
 
 function buildSynopsis(handshake, store, synopsisCache, cb) {
   var targetName = handshake.name;
@@ -216,38 +202,4 @@ function buildSynopsis(handshake, store, synopsisCache, cb) {
       cb(null, target);
     });
   }
-}
-
-function buildMongoStore(name) {
-  var collection = db.collection(name);
-
-  function noopErr(err) {
-    if (err) {
-      debug('error writing to db', err);
-    }
-  }
-
-  return {
-    get: function(key, cb) {
-      collection.findOne({
-        key: key
-      }, function(err, doc) {
-        if (err) return cb(err);
-        cb(null, doc ? doc.val : null);
-      });
-    },
-    set: function(key, val, cb) {
-      collection.update({
-        key: key
-      }, {
-        $set: {
-          key: key,
-          val: val
-        }
-      }, {
-        upsert: true,
-        multi: false
-      }, cb || noopErr);
-    }
-  };
 }

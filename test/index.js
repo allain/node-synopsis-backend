@@ -1,8 +1,6 @@
 var assert = require('assert');
 var SynopsisBackend = require('..');
-var mongojs = require('mongojs');
 var JSONStream = require('JSONStream');
-var db = mongojs(process.env.MONGOLAB_URI || 'localhost/sync-test');
 
 describe('SynopsisBackend', function() {
   var backend;
@@ -10,15 +8,13 @@ describe('SynopsisBackend', function() {
   var jsonStream;
 
   beforeEach(function(done) {
-    db.collection('unit-testing').drop(function(err) {
-      if (err && err.message !== 'ns not found') return done(err);
-
-      backend = new SynopsisBackend();
-      stream = backend.createStream();
-      jsonStream = JSONStream.stringify(false);
-      jsonStream.pipe(stream);
-      done();
-    });
+		backend = new SynopsisBackend();
+		backend.on('ready', function() {
+			stream = backend.createStream();
+			jsonStream = JSONStream.stringify(false);
+			jsonStream.pipe(stream);
+			done();
+		}); 
   });
 
   it('supports creation', function() {
@@ -145,23 +141,26 @@ describe('SynopsisBackend', function() {
         cb(new Error('NEVER!!!'));
       }
     });
-    stream = backend.createStream();
-    jsonStream = JSONStream.stringify(false);
-    jsonStream.pipe(stream);
 
-    jsonStream.write({
-      auth: {
-        network: 'google',
-        access_token: 'BAD'
-      },
-      consumerId: 1,
-      name: 'test'
-    });
+    backend.on('ready', function() {
+			stream = backend.createStream();
+			jsonStream = JSONStream.stringify(false);
+			jsonStream.pipe(stream);
 
-    stream.on('data', function(data) {
-      data = JSON.parse(data);
-      assert.equal(data.error, 'invalid auth');
-      done();
-    });
+			jsonStream.write({
+				auth: {
+					network: 'google',
+					access_token: 'BAD'
+				},
+				consumerId: 1,
+				name: 'test'
+			});
+
+			stream.on('data', function(data) {
+				data = JSON.parse(data);
+				assert.equal(data.error, 'invalid auth');
+				done();
+			});
+		});
   });
 });

@@ -25,16 +25,17 @@
   "dependencies": {
     "JSONStream": "^0.10.0",
     "debug": "^2.1.1",
+    "defaults": "^1.0.0",
     "duplexify": "^3.2.0",
     "jiff": "^0.7.0",
-    "mongojs": "^0.18.1",
     "stream-bootstrap": "^0.1.0",
     "synopsis": "^0.9.3",
-    "through2": "^0.6.3",
-    "uuid": "^2.0.1"
+    "uuid": "^2.0.1",
+    "wildemitter": "^1.0.1"
   },
   "devDependencies": {
     "js-beautify": "^1.5.4",
-    "mocha": "^2.1.0"
+    "mocha": "^2.1.0",
+    "through2": "^0.6.3"
   }
 }
